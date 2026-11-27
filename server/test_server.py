@@ -2,11 +2,22 @@
 import requests
 import base64
 import sys
+import os
 
 from pathlib import Path
+from dotenv import load_dotenv
 
 
-SERVER_URL = "http://127.0.0.1:8000/process"
+BASE_DIR = Path(__file__).resolve().parent
+
+load_dotenv(BASE_DIR / ".env")
+
+SERVER_URL = os.getenv(
+    "GLASSES_SERVER",
+    "http://127.0.0.1:8000"
+).rstrip("/") + "/process"
+
+API_TOKEN = os.getenv("API_TOKEN", "")
 
 
 def test_server(image_path, mode="leer"):
@@ -20,16 +31,19 @@ def test_server(image_path, mode="leer"):
     print("Enviando imagen al servidor...")
 
     try:
+
         with image_path.open("rb") as image:
 
             response = requests.post(
                 SERVER_URL,
                 files={"file": (image_path.name, image)},
                 data={"mode": mode},
+                headers={"X-Token": API_TOKEN},
                 timeout=60
             )
 
     except requests.RequestException as error:
+
         print(f"Error de conexion: {error}")
         return
 
@@ -48,17 +62,18 @@ def test_server(image_path, mode="leer"):
     print(f"Palabras: {result['words']}")
     print(f"Estado: {result['hint']}")
 
-    # Decodificar audio Base64
     audio_bytes = base64.b64decode(result["audio"])
 
-    output = Path(__file__).parent / "respuesta.wav"
+    output = BASE_DIR / "respuesta.wav"
+
     output.write_bytes(audio_bytes)
 
     print(f"\nAudio guardado en: {output}")
 
-    # Reproducir audio en Windows
     if sys.platform == "win32":
+
         import winsound
+
         winsound.PlaySound(
             str(output),
             winsound.SND_FILENAME
@@ -68,6 +83,7 @@ def test_server(image_path, mode="leer"):
 if __name__ == "__main__":
 
     if len(sys.argv) < 2:
+
         print("Uso: python test_server.py imagen.png leer")
         sys.exit(1)
 

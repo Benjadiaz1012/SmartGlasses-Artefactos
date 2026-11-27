@@ -4,28 +4,34 @@ from fastapi import (
     UploadFile,
     File,
     Form,
-    HTTPException
+    HTTPException,
+    Depends
 )
+
 from PIL import Image, UnidentifiedImageError
 from io import BytesIO
+
 import pytesseract
 import logging
 
 from ocr import extract_text
 from tts import generate_audio, audio_to_base64
+from auth import verify_token
+
+from config import (
+    MIN_CONF,
+    MAX_IMAGE_SIZE,
+    MAX_IMAGE_PIXELS
+)
 
 
 app = FastAPI(
     title="Smart Glasses API",
     description="Servidor para lentes inteligentes con IA",
-    version="0.4.0"
+    version="0.5.0"
 )
 
 logger = logging.getLogger("uvicorn.error")
-
-MAX_IMAGE_SIZE = 10 * 1024 * 1024
-MAX_IMAGE_PIXELS = 20_000_000
-MIN_CONF = 0.60
 
 
 @app.get("/")
@@ -45,7 +51,10 @@ def health():
     }
 
 
-@app.post("/process")
+@app.post(
+    "/process",
+    dependencies=[Depends(verify_token)]
+)
 def process_image(
     file: UploadFile = File(...),
     mode: str = Form("leer")
@@ -82,14 +91,14 @@ def process_image(
             detail="El archivo enviado no es una imagen valida"
         )
 
-    # 3. Validar modo de funcionamiento
+    # 3. Validar modo
     if mode not in ("leer", "billetes", "describir"):
         raise HTTPException(
             status_code=400,
             detail="Modo no reconocido"
         )
 
-    # 4. Procesar segun el modo
+    # 4. Procesar imagen
     if mode == "leer":
 
         try:
@@ -112,8 +121,8 @@ def process_image(
         conf = result["conf"]
         words = result["words"]
 
-        # Determinar el mensaje que escuchara el usuario
         if not text:
+
             hint = "no_text"
             speech = (
                 "No encontré texto en la imagen. "
@@ -121,6 +130,7 @@ def process_image(
             )
 
         elif conf < MIN_CONF:
+
             hint = "low_conf"
             speech = (
                 "La lectura puede ser incorrecta. "
@@ -128,11 +138,12 @@ def process_image(
             )
 
         else:
+
             hint = "ok"
             speech = text
 
     else:
-        # Modos pendientes de implementar
+
         text = ""
         conf = 0
         words = 0
@@ -144,17 +155,20 @@ def process_image(
 
     # 5. Generar audio
     try:
+
         audio_bytes = generate_audio(speech)
         audio_base64 = audio_to_base64(audio_bytes)
 
     except Exception:
+
         logger.exception("Error durante la generacion de audio")
+
         raise HTTPException(
             status_code=500,
             detail="Error durante la generacion de audio"
         )
 
-    # 6. Devolver resultado completo
+    # 6. Devolver resultado
     return {
         "ok": True,
         "mode": mode,
